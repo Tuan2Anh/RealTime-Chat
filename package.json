@@ -1,0 +1,23 @@
+{
+  "scripts": {
+    "start:mongodb": "mongod --dbpath C:\\data\\db",
+    "start:auth": "pm2 start auth-server/server.js --name auth-server",
+    "start:message": "pm2 start message-server/server.js --name message-server",
+    "start:storage": "pm2 start storage-server/server.js --name storage-server",
+    "start:gateway": "pm2 start api-gateway.js --name api-gateway",
+    "stop:auth": "pm2 stop auth-server",
+    "stop:message": "pm2 stop message-server",
+    "stop:storage": "pm2 stop storage-server",
+    "stop:gateway": "pm2 stop api-gateway",
+    "start": "concurrently \"npm run start:mongodb\" \"npm run start:auth\" \"npm run start:message\" \"npm run start:storage\" \"npm run start:gateway\"",
+    "stop": "pm2 stop all"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "pm2": "^5.1.2"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3"
+  }
+}

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Real-time Chat</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Phần Đăng Ký -->
+  <div id="register-container">
+    <h1>Register</h1>
+    <label for="register-username">Username</label>
+    <input id="register-username" class="input-field" placeholder="Enter your username">
+    <label for="register-password">Password</label>
+    <input id="register-password" type="password" class="input-field" placeholder="Enter your password">
+    <button id="register" class="btn">Register</button>
+    <button id="switch-to-login" class="btn btn-secondary">Already have an account? Log in</button>
+  </div>
+
+  <!-- Phần Đăng Nhập -->
+  <div id="login-container">
+    <h1>Login</h1>
+    <label for="username">Username</label>
+    <input id="username" class="input-field" placeholder="Enter your username">
+    <label for="password">Password</label>
+    <input id="password" type="password" class="input-field" placeholder="Enter your password">
+    <button id="login" class="btn">Login</button>
+    <button id="switch-to-register" class="btn btn-secondary">Need an account? Register</button>
+  </div>
+
+  <!-- Phần Chat -->
+  <div id="chat-container">
+    <h1>Chat</h1>
+    <div class="chat-flex-container">
+      <div id="user-list" class="user-list-container"></div>
+      <div class="chat-area">
+        <div id="messages" class="messages-container"></div>
+        <div class="message-container">
+          <input id="message" class="input-field" placeholder="Type a message">
+          <button id="send" class="btn">Send</button>
+        </div>
+      </div>
+    </div>
+    <button id="logout" class="btn-logout">Logout</button>
+  </div>
+
+
+  <script src="https://cdn.socket.io/4.5.1/socket.io.min.js"></script>
+  <script>
+
+    document.getElementById('switch-to-login').onclick = () => {
+      document.getElementById('register-container').style.display = 'none';
+      document.getElementById('login-container').style.display = 'block';
+    };
+    
+    document.getElementById('switch-to-register').onclick = () => {
+      document.getElementById('login-container').style.display = 'none';
+      document.getElementById('register-container').style.display = 'block';
+    };
+    
+    // Bắt đầu bằng việc ẩn đăng ký và chỉ hiển thị đăng nhập
+    document.getElementById('register-container').style.display = 'none';
+    document.getElementById('login-container').style.display = 'block';
+
+    document.getElementById('logout').onclick = () => {
+      // Clear the stored token if using localStorage or cookies
+      localStorage.removeItem('token');  // Assuming token is stored in localStorage
+      // Optionally clear session storage if used
+      sessionStorage.clear();
+  
+      // Hide the chat container
+      document.getElementById('chat-container').style.display = 'none';
+  
+      // Show the login container
+      document.getElementById('login-container').style.display = 'block';
+  
+      // Optionally, clear any user-specific data on the client-side
+      document.getElementById('user-list').innerHTML = '';
+      document.getElementById('messages').innerHTML = '';
+  
+  };
+  
+    
+    
+    let token = '';
+    let username = '';
+    let socket;
+    let selectedUser = '';  // Giữ thông tin người nhận
+
+    // Xử lý đăng ký
+    document.getElementById('register').onclick = () => {
+      const registerUsername = document.getElementById('register-username').value;
+      const password = document.getElementById('register-password').value;
+
+      fetch('http://localhost:8080/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: registerUsername, password })
+      })
+      .then(response => response.json())
+      .then(data => {
+        alert(data.message);
+      })
+      .catch(err => {
+        console.error('Error:', err.message);
+        alert('Failed to register. Check console for details.');
+      });
+    };
+
+    // Xử lý đăng nhập
+    document.getElementById('login').onclick = () => {
+      username = document.getElementById('username').value; // Cập nhật biến username
+      const password = document.getElementById('password').value;
+
+      fetch('http://localhost:8080/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        token = data.token; // Lưu token
+        console.log('Token:', token);
+
+        // Ẩn phần đăng nhập và hiển thị phần chat
+        document.getElementById('login-container').style.display = 'none';
+        document.getElementById('register-container').style.display = 'none';
+        document.getElementById('chat-container').style.display = 'block';
+
+        // Kết nối tới Message Server qua Socket.IO
+        socket = io('http://localhost:4001');
+
+        // Tải danh sách người dùng
+        fetch('http://localhost:8080/auth/users', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        })
+        .then(response => response.json())
+        .then(users => {
+          const userList = document.getElementById('user-list');
+          userList.innerHTML = ''; // Xóa danh sách cũ
+          users.forEach(user => {
+            const userDiv = document.createElement('div');
+            userDiv.classList.add('user');
+            userDiv.textContent = user.username;
+            userDiv.onclick = () => {
+              selectedUser = user.username;  // Cập nhật người nhận khi nhấn vào người bạn
+              loadMessages();  // Tải tin nhắn giữa người gửi và người nhận
+            };
+            userList.appendChild(userDiv);
+          });
+        })
+        .catch(err => {
+          console.error('Error:', err.message);
+        });
+
+        // Nhận tin nhắn
+        socket.on('message', (data) => {
+          const messagesDiv = document.getElementById('messages');
+          const { user, message } = data;
+          const messageDiv = document.createElement('div');
+          messageDiv.classList.add('message');
+
+          if (user === username) {
+            messageDiv.classList.add('right');
+            messageDiv.textContent = message;
+          } else {
+            messageDiv.classList.add('left');
+            messageDiv.textContent = `${user}: ${message}`;
+          }
+
+          messagesDiv.appendChild(messageDiv);
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+      })
+      .catch(err => {
+        console.error('Error:', err.message);
+        alert('Failed to login. Check console for details.');
+      });
+    };
+
+    // Tải tin nhắn giữa người dùng và đối phương
+    function loadMessages() {
+      if (!username || !selectedUser) {
+        console.error('Sender or receiver not defined');
+        return;  // Nếu sender hoặc receiver không được xác định, không tải tin nhắn
+      }
+
+      fetch(`http://localhost:8080/messages/${username}/${selectedUser}`)
+      .then(response => response.json())
+      .then(messages => {
+        const messagesDiv = document.getElementById('messages');
+        messagesDiv.innerHTML = ''; // Xóa tin nhắn cũ
+        messages.forEach(msg => {
+          const messageDiv = document.createElement('div');
+          messageDiv.classList.add('message');
+          messageDiv.classList.add(msg.user === username ? 'right' : 'left');
+          messageDiv.textContent = msg.user === username ? msg.message : `${msg.user}: ${msg.message}`;
+          messagesDiv.appendChild(messageDiv);
+        });
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      })
+      .catch(err => {
+        console.error('Error:', err.message);
+      });
+    }
+
+    // Xử lý gửi tin nhắn
+    document.getElementById('send').onclick = () => {
+      const message = document.getElementById('message').value;
+
+      // Kiểm tra nếu tin nhắn không trống
+      if (!message.trim()) {
+        alert('Message cannot be empty');
+        return;
+      }
+
+      // Kiểm tra nếu chưa chọn người nhận
+      if (!selectedUser) {
+        alert('Please select a receiver');
+        return;
+      }
+
+      // Gửi yêu cầu POST đến storage-server để lưu tin nhắn
+      fetch('http://localhost:8080/storage/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user: username,       // Gửi người gửi
+          message: message,     // Gửi nội dung tin nhắn
+          to: selectedUser      // Gửi người nhận
+        })
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            console.log('Message saved:', data.message);
+            // Hiển thị tin nhắn đã gửi trong giao diện
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'right');  // Căn phải cho tin nhắn của người gửi
+            messageDiv.textContent = message;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+          } else {
+            console.error('Failed to save message:', data.error);
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
+        });
+
+      // Xóa nội dung sau khi gửi tin nhắn
+      document.getElementById('message').value = '';
+    };
+  </script>
+</body>
+</html>
